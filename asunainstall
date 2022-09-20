@@ -174,7 +174,7 @@ full_install() {
   arch-chroot ${ASUNA_INSTALL_DIR} systemctl enable lightdm
   arch-chroot ${ASUNA_INSTALL_DIR} usermod -aG rfkill ${ASUNAUSER}
   arch-chroot ${ASUNA_INSTALL_DIR} usermod -aG wheel ${ASUNAUSER}
-  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} unzip pcmanfm wezterm micro discord steam lutris qbittorrent pavucontrol pipewire-pulse pipewire-alsa
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} unzip pcmanfm wezterm micro discord steam lutris qbittorrent pavucontrol pipewire-pulse pipewire-alsa noto-fonts noto-fonts-cjk noto-fonts-emoji noto-fonts-extra
 }
 
 echo "Project Asuna Installer"

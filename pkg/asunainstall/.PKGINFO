@@ -2,10 +2,10 @@
 # using fakeroot version 1.29
 pkgname = asunainstall
 pkgbase = asunainstall
-pkgver = 0.4.3-1
+pkgver = 0.4.5-1
 pkgdesc = Installer for Project Asuna
 url = https://asunaproject.nl
-builddate = 1663698369
+builddate = 1663707702
 packager = Unknown Packager
-size = 7954
+size = 8055
 arch = x86_64
