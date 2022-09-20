@@ -1,0 +1,10 @@
+pkgbase = asunainstall
+	pkgdesc = Installer for Project Asuna
+	pkgver = 0.4.4
+	pkgrel = 1
+	url = https://asunaproject.nl
+	arch = x86_64
+	source = asunainstall
+	sha256sums = c83fb987bf554ad9c20a4c5c7513b1cbf8060f7c691165647dd43afd09a0f622
+
+pkgname = asunainstall

@@ -1,0 +1,201 @@
+#!/bin/zsh
+# Project Asuna Installer
+# This defines all of the current variables
+CMD_PACMAN_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*")
+CMD_PACMAN_UPDATE=(/usr/bin/pacman -Sy)
+CPU_VENDOR=$(cat /proc/cpuinfo | grep 'vendor' | uniq | cut -c 13-)
+SYSTEM_LOCALE="${SYSTEM_LOCALE:-en_US.UTF-8 UTF-8}"
+ASUNA_INSTALL_DIR="${ASUNA_INSTALL_DIR:-/mnt}"
+
+# Internet connectivity check
+wget -q --spider http://google.com
+if [ $? -eq 0 ]; then
+  echo "Internet check passed"
+else
+  echo -e "No internet connection available, exiting\nUse wifi-menu util to connect WiFi"
+  exit
+fi
+
+# Update system time
+if [ $(timedatectl status | grep -c "NTP service: active") -ne 1 ]; then
+  # If NTP is not active, enable it.
+  timedatectl set-ntp true
+
+  # Update the hardware clock.
+  hwclock --systohc
+fi
+
+# Microcode selection
+if [[ "${CPU_VENDOR}" == "AuthenticAMD" ]]; then
+  UCODE_INSTALL_MSG="AMD CPU detected, install AMD ucode..."
+  UCODE_INSTALL="amd-ucode"
+else
+  UCODE_INSTALL_MSG="Intel CPU detected, installing Intel ucode..."
+	UCODE_INSTALL="intel-ucode"
+fi
+
+base_os_install() {
+  lsblk
+  read "?Enter your desired drive node here (for example, sda or nvme0n1): " DRIVEDEVICE
+
+  DEVICE="/dev/${DRIVEDEVICE}"
+
+  INSTALLDEVICE="${DEVICE}"
+
+  echo ${DEVICE} | grep -q -P "^/dev/(nvme|loop|mmcblk)"
+  if [ $? -eq 0 ]; then
+    INSTALLDEVICE="${DEVICE}p"
+  fi
+
+  if [ ! -b $DEVICE ]; then
+    echo "$DEVICE not found! Installation Aborted!"
+    exit 1
+  fi
+
+  echo "\n\nWARNING: The following drive is going to be erased fully. ALL DATA ON DRIVE $DEVICE WILL BE LOST!\n"
+  lsblk $DEVICE
+  echo -n "\nErase $DEVICE and begin installation(y/N): "
+  read ANS
+
+  if [[ ! ($ANS = 'y' || $ANS = 'Y') ]]; then
+    echo "Installation Aborted!"
+    exit 1
+  fi
+
+  echo "\nCreating partitions..."
+  sfdisk --delete ${DEVICE}
+  wipefs -a ${DEVICE}
+
+  # EFI Partition
+  parted ${DEVICE} mklabel gpt
+  parted ${DEVICE} mkpart primary fat32 2M 256M
+  parted ${DEVICE} set 1 boot on
+  parted ${DEVICE} set 1 esp on
+
+  # Root Partition
+  parted ${DEVICE} mkpart primary btrfs 256M 100%
+
+  root_parition="${INSTALLDEVICE}2"
+  mkfs -t vfat ${INSTALLDEVICE}1
+  fatlabel ${INSTALLDEVICE}1 EFI
+  mkfs -t btrfs -f ${root_parition}
+  btrfs filesystem label ${root_parition} asuna-root
+
+  echo "\nPartitioning complete, mounting and pacstrapping..."
+  echo "${UCODE_INSTALL_MSG}"
+  mount -t btrfs -o subvol=/,compress-force=zstd:1,discard,noatime,nodiratime ${root_parition} ${ASUNA_INSTALL_DIR}
+  pacstrap ${ASUNA_INSTALL_DIR} base base-devel ${UCODE_INSTALL} linux-asuna linux-asuna-headers linux-firmware
+  echo "Pacstrap complete. Rebuilding kernel modules."
+  sleep 2
+  arch-chroot ${ASUNA_INSTALL_DIR} depmod -a $(ls /lib/modules)
+  arch-chroot ${ASUNA_INSTALL_DIR} mkinitcpio -P
+
+  echo "\nBase system installation done, generating fstab..."
+  genfstab -U -p /mnt >> /mnt/etc/fstab
+  cp /etc/pacman.conf /mnt/etc/pacman.conf
+  cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/mirrorlist
+
+  read "?Enter hostname for this installation: " ASUNAHOSTNAME
+  echo ${ASUNAHOSTNAME} > ${ASUNA_INSTALL_DIR}/etc/hostname
+  
+  # Create user
+	while true; do
+    read "?Enter username for this installation: " ASUNAUSER
+    if [ $ASUNAUSER = "root" ]; then
+      echo "User \"root\" already exists!"
+    else
+      break
+    fi
+	done
+  
+  echo "\nCreating user ${ASUNAUSER}..."
+  echo "\nSet root password:"
+  arch-chroot ${ASUNA_INSTALL_DIR} passwd root
+  arch-chroot ${ASUNA_INSTALL_DIR} useradd --create-home ${ASUNAUSER}
+  echo "\nSet ${ASUNAUSER} password:"
+  arch-chroot ${ASUNA_INSTALL_DIR} passwd ${ASUNAUSER}
+  echo "$ASUNAUSER ALL=(ALL:ALL) ALL" > ${ASUNA_INSTALL_DIR}/etc/sudoers.d/${ASUNAUSER}
+  chmod 0440 ${ASUNA_INSTALL_DIR}/etc/sudoers.d/${ASUNAUSER}
+  echo "127.0.1.1    ${ASUNAHOSTNAME}" >> ${ASUNA_INSTALL_DIR}/etc/hosts
+
+  echo "\nInstalling bootloader..."
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_UPDATE}
+  mkdir ${ASUNA_INSTALL_DIR}/boot/efi
+  mount -t vfat ${INSTALLDEVICE}1 ${ASUNA_INSTALL_DIR}/boot/efi
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} core/grub efibootmgr inetutils mkinitcpio neofetch networkmanager openssh paru
+  arch-chroot ${ASUNA_INSTALL_DIR} systemctl enable NetworkManager systemd-timesyncd sshd
+  arch-chroot ${ASUNA_INSTALL_DIR} grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=asuna --removable
+  arch-chroot ${ASUNA_INSTALL_DIR} grub-mkconfig -o /boot/grub/grub.cfg
+
+  echo "\nSetting up locale..."
+  echo "${SYSTEM_LOCALE}" >> ${ASUNA_INSTALL_DIR}/etc/locale.gen
+  arch-chroot ${ASUNA_INSTALL_DIR} locale-gen
+  echo "LANG=$(echo ${SYSTEM_LOCALE} | cut -d' ' -f1)" > ${ASUNA_INSTALL_DIR}/etc/locale.conf
+}
+
+full_install() {
+  echo "Installing full Project Asuna..."
+  sleep 1
+  # The actual installation begins here:
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_UPDATE}
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} wireplumber
+  sleep 1
+  while true
+  do
+    echo "Please choose your current GPU:"
+    echo "1) AMD: Will install Gamescope with Mangohud and FSR support"
+    echo "2) Intel: Will install Gamescope with Mangohud and FSR or NIR support"
+    echo "3) NVIDIA (9xx+ only): Will install proprietary drivers and Gamescope with Mangohud and NIR support"
+    read "?Enter your choice here: " ASUNA_GPU_TYPE
+
+    if [[ "${ASUNA_GPU_TYPE}" == "1" ]]; then
+            echo "Installing gamescope for AMD GPUs..."
+      GAMESCOPE_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" vulkan-radeon lib32-vulkan-radeon gamescope mesa lib32-mesa)
+      break
+        elif [[ "${ASUNA_GPU_TYPE}" == "2" ]]; then
+            echo "Installing gamescope for Intel GPUs..."
+      sed -i 's/linux-firmware/linux-firmware gamescope vulkan-intel lib32-vulkan-intel mesa lib32-mesa/g' ${HOLO_INSTALL_DIR}/etc/pacman.conf
+            GAMESCOPE_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" vulkan-intel lib32-vulkan-intel mesa lib32-mesa gamescope)
+      break
+        elif [[ "${ASUNA_GPU_TYPE}" == "3" ]]; then
+            echo "Installing gamescope for NVIDIA GPUs..."
+            GAMESCOPE_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" nvidia-utils nvidia-dkms opencl-nvidia gamescope)
+      sed -i 's/splash/splash nvidia-drm.modeset=1/g' ${ASUNA_INSTALL_DIR}/etc/default/grub
+      arch-chroot ${HOLO_INSTALL_DIR} grub-mkconfig -o /boot/grub/grub.cfg
+      break
+    else
+      echo -e "You have made an invalid selection, please try again...\n"
+    fi
+  done
+  echo "\nInstalling Desktop..."
+  arch-chroot ${ASUNA_INSTALL_DIR} ${GAMESCOPE_INSTALL}
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} xorg xclip xfce4 xfce4-goodies papirus-icon-theme nm-connection-editor network-manager-applet lightdm lightdm-gtk-greeter
+  arch-chroot ${ASUNA_INSTALL_DIR} systemctl enable lightdm
+  arch-chroot ${ASUNA_INSTALL_DIR} usermod -aG rfkill ${ASUNAUSER}
+  arch-chroot ${ASUNA_INSTALL_DIR} usermod -aG wheel ${ASUNAUSER}
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} unzip pcmanfm wezterm micro discord steam lutris qbittorrent pavucontrol pipewire-pulse pipewire-alsa
+}
+
+echo "Project Asuna Installer"
+echo "Start time: $(date)"
+echo "Please choose installation type:"
+echo "1) barebones: Barebones OS-only installation"
+echo "2) full: Full desktop install"
+read "?Enter your choice here: " ASUNA_INSTALL_TYPE
+echo ""
+if [[ "${ASUNA_INSTALL_TYPE}" == "1" ]] || [[ "${ASUNA_INSTALL_TYPE}" == "barebones" ]]; then
+  echo "Installing Project Asuna, barebones configuration..."
+  base_os_install
+  echo "Installation finished! You may reboot now, or type arch-chroot /mnt to make further changes"
+
+elif [[ "${ASUNA_INSTALL_TYPE}" == "2" ]]; then
+  echo "Installing Project Asuna, full configuration..."
+  base_os_install
+  full_install
+  echo "Installation finished! You may reboot now, or type arch-chroot /mnt to make further changes"
+
+else
+  echo "Invalid choice. Exiting installer..."
+fi
+
+echo "End time: $(date)"
