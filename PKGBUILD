@@ -7,7 +7,7 @@ pkgdesc="Installer for Project Asuna"
 arch=(x86_64)
 url="https://asunaproject.nl"
 source=(asunainstall)
-sha256sums=('169fdb03528b476d5d866bbcb5d6d32826e927d14794cd293ff682ce355a55af')
+sha256sums=('be3a4dcc1c244db0fbf0477ef81facaee5a647d51aed34138bfe55a9142f1aab')
 
 package() {
   install -Dm755 asunainstall "$pkgdir"/usr/bin/asunainstall
