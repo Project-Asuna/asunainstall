@@ -84,7 +84,7 @@ base_os_install() {
   echo "\nPartitioning complete, mounting and pacstrapping..."
   echo "${UCODE_INSTALL_MSG}"
   mount -t btrfs -o subvol=/,compress-force=zstd:1,discard,noatime,nodiratime ${root_parition} ${ASUNA_INSTALL_DIR}
-  pacstrap ${ASUNA_INSTALL_DIR} base base-devel ${UCODE_INSTALL} linux-asuna linux-asuna-headers linux-firmware
+  pacstrap ${ASUNA_INSTALL_DIR} base base-devel ${UCODE_INSTALL} linux linux-headers linux-firmware
   echo "Pacstrap complete. Rebuilding kernel modules."
   sleep 2
   arch-chroot ${ASUNA_INSTALL_DIR} depmod -a $(ls /lib/modules)
@@ -123,7 +123,7 @@ base_os_install() {
   arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_UPDATE}
   mkdir ${ASUNA_INSTALL_DIR}/boot/efi
   mount -t vfat ${INSTALLDEVICE}1 ${ASUNA_INSTALL_DIR}/boot/efi
-  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} core/grub efibootmgr inetutils mkinitcpio neofetch networkmanager openssh paru
+  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} core/grub efibootmgr inetutils mkinitcpio neofetch networkmanager openssh paru unzip micro
   arch-chroot ${ASUNA_INSTALL_DIR} systemctl enable NetworkManager systemd-timesyncd sshd
   arch-chroot ${ASUNA_INSTALL_DIR} grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=asuna --removable
   arch-chroot ${ASUNA_INSTALL_DIR} grub-mkconfig -o /boot/grub/grub.cfg
@@ -144,59 +144,40 @@ full_install() {
   while true
   do
     echo "Please choose your current GPU:"
-    echo "1) AMD: Will install Gamescope with Mangohud and FSR support"
-    echo "2) Intel: Will install Gamescope with Mangohud and FSR or NIR support"
-    echo "3) NVIDIA (9xx+ only): Will install proprietary drivers and Gamescope with Mangohud and NIR support"
+    echo "1) AMD"
+    echo "2) Intel"
+    echo "3) NVIDIA (9xx+ only)"
     read "?Enter your choice here: " ASUNA_GPU_TYPE
 
     if [[ "${ASUNA_GPU_TYPE}" == "1" ]]; then
             echo "Installing gamescope for AMD GPUs..."
-      GAMESCOPE_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" vulkan-radeon lib32-vulkan-radeon gamescope mesa lib32-mesa)
+      GPU_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" vulkan-radeon lib32-vulkan-radeon mesa lib32-mesa)
       break
         elif [[ "${ASUNA_GPU_TYPE}" == "2" ]]; then
             echo "Installing gamescope for Intel GPUs..."
       sed -i 's/linux-firmware/linux-firmware gamescope vulkan-intel lib32-vulkan-intel mesa lib32-mesa/g' ${HOLO_INSTALL_DIR}/etc/pacman.conf
-            GAMESCOPE_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" vulkan-intel lib32-vulkan-intel mesa lib32-mesa gamescope)
+            GPU_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" vulkan-intel lib32-vulkan-intel mesa lib32-mesa)
       break
         elif [[ "${ASUNA_GPU_TYPE}" == "3" ]]; then
             echo "Installing gamescope for NVIDIA GPUs..."
-            GAMESCOPE_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" nvidia-utils nvidia-dkms opencl-nvidia gamescope)
+            GPU_INSTALL=(/usr/bin/pacman --noconfirm -S --needed --overwrite="*" nvidia-utils nvidia opencl-nvidia)
       sed -i 's/splash/splash nvidia-drm.modeset=1/g' ${ASUNA_INSTALL_DIR}/etc/default/grub
-      arch-chroot ${HOLO_INSTALL_DIR} grub-mkconfig -o /boot/grub/grub.cfg
+      arch-chroot ${ASUNA_INSTALL_DIR} grub-mkconfig -o /boot/grub/grub.cfg
       break
     else
       echo -e "You have made an invalid selection, please try again...\n"
     fi
   done
   echo "\nInstalling Desktop..."
-  arch-chroot ${ASUNA_INSTALL_DIR} ${GAMESCOPE_INSTALL}
-  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} xorg xclip xfce4 xfce4-goodies papirus-icon-theme nm-connection-editor network-manager-applet lightdm lightdm-gtk-greeter
-  arch-chroot ${ASUNA_INSTALL_DIR} systemctl enable lightdm
+  arch-chroot ${ASUNA_INSTALL_DIR} ${GPU_INSTALL}
   arch-chroot ${ASUNA_INSTALL_DIR} usermod -aG rfkill ${ASUNAUSER}
   arch-chroot ${ASUNA_INSTALL_DIR} usermod -aG wheel ${ASUNAUSER}
-  arch-chroot ${ASUNA_INSTALL_DIR} ${CMD_PACMAN_INSTALL} unzip pcmanfm wezterm micro discord steam lutris qbittorrent pavucontrol pipewire-pulse pipewire-alsa noto-fonts noto-fonts-cjk noto-fonts-emoji noto-fonts-extra
 }
 
 echo "Project Asuna Installer"
 echo "Start time: $(date)"
-echo "Please choose installation type:"
-echo "1) barebones: Barebones OS-only installation"
-echo "2) full: Full desktop install"
-read "?Enter your choice here: " ASUNA_INSTALL_TYPE
-echo ""
-if [[ "${ASUNA_INSTALL_TYPE}" == "1" ]] || [[ "${ASUNA_INSTALL_TYPE}" == "barebones" ]]; then
-  echo "Installing Project Asuna, barebones configuration..."
-  base_os_install
-  echo "Installation finished! You may reboot now, or type arch-chroot /mnt to make further changes"
 
-elif [[ "${ASUNA_INSTALL_TYPE}" == "2" ]]; then
-  echo "Installing Project Asuna, full configuration..."
-  base_os_install
-  full_install
-  echo "Installation finished! You may reboot now, or type arch-chroot /mnt to make further changes"
-
-else
-  echo "Invalid choice. Exiting installer..."
-fi
+base_os_install
+full_install
 
 echo "End time: $(date)"

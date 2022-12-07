@@ -1,7 +1,7 @@
 # Maintainer: Rodney van den Velden <rodney@dfagaming.nl>
 
 pkgname=asunainstall
-pkgver=0.4.5
+pkgver=0.5
 pkgrel=1
 pkgdesc="Installer for Project Asuna"
 arch=(x86_64)
