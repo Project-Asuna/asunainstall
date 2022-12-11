@@ -85,6 +85,8 @@ base_os_install() {
   echo "${UCODE_INSTALL_MSG}"
   mount -t btrfs -o subvol=/,compress-force=zstd:1,discard,noatime,nodiratime ${root_parition} ${ASUNA_INSTALL_DIR}
   pacstrap ${ASUNA_INSTALL_DIR} base base-devel ${UCODE_INSTALL} linux linux-headers linux-firmware
+  arch-chroot ${ASUNA_INSTALL_DIR} pacman-key --finger E131ABCFF8F9F6C43220E163C960E4A863779040
+  arch-chroot ${ASUNA_INSTALL_DIR} pacman-key --lsign-key E131ABCFF8F9F6C43220E163C960E4A863779040
   echo "Pacstrap complete. Rebuilding kernel modules."
   sleep 2
   arch-chroot ${ASUNA_INSTALL_DIR} depmod -a $(ls /lib/modules)
